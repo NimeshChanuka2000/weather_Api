@@ -9,6 +9,7 @@ A secure weather analytics application that retrieves weather data from OpenWeat
 - ✅ Redis server-side caching (5 minutes TTL)
 - ✅ RESTful API endpoints
 - ✅ Cache status debug endpoint
+- ⏳ Authentication & Authorization (Auth0) - In Progress
 
 ## 📊 Comfort Index Algorithm
 
@@ -19,49 +20,65 @@ The Comfort Index Score is calculated using four key weather parameters:
 ```
 Comfort Score = (Temperature Score × 0.40) + (Humidity Score × 0.30) + 
                 (Wind Score × 0.20) + (Cloudiness Score × 0.10)
+
+Where:
+- Temperature Score = 100 - |temperature - 22| × 4
+- Humidity Score = 100 - |humidity - 50| × 1.2
+- Wind Score = 100 - windSpeed × 10
+- Cloudiness Score = 100 - |cloudiness - 40| × 1.5
+
+Final Score = max(0, min(calculated_score, 100))
 ```
 
 ### Parameters & Weights
 
 1. **Temperature (40% weight)**
-   - Optimal range: 18°C - 26°C
-   - Human comfort is most affected by temperature
-   - Scores decrease as temperature moves away from the ideal range
-   - Converted from Kelvin to Celsius for calculation
+   - **Optimal value**: 22°C
+   - **Penalty factor**: 4 points per degree deviation
+   - **Reasoning**: Human comfort peaks around 22°C (room temperature). Each degree away reduces comfort significantly
+   - **Example**: At 18°C or 26°C → Score = 84, At 30°C → Score = 68
 
 2. **Humidity (30% weight)**
-   - Optimal range: 40% - 60%
-   - High humidity makes heat feel worse; low humidity causes discomfort
-   - Second most important factor for comfort
-   - Values range from 0-100%
+   - **Optimal value**: 50%
+   - **Penalty factor**: 1.2 points per percentage deviation
+   - **Reasoning**: 50% relative humidity is ideal. Too dry (<30%) causes discomfort; too humid (>70%) makes air feel heavy
+   - **Example**: At 30% or 70% → Score = 76, At 80% → Score = 64
 
 3. **Wind Speed (20% weight)**
-   - Optimal range: 1 - 3 m/s (3.6 - 10.8 km/h)
-   - Light breeze is pleasant; strong winds are uncomfortable
-   - Moderate impact on overall comfort
-   - Measured in meters per second
+   - **Optimal value**: 0 m/s (calm)
+   - **Penalty factor**: 10 points per m/s
+   - **Reasoning**: Light breezes are pleasant, but strong winds create discomfort. Score decreases linearly with wind speed
+   - **Example**: At 2 m/s → Score = 80, At 5 m/s → Score = 50
 
 4. **Cloudiness (10% weight)**
-   - Optimal: 20% - 50% (partly cloudy)
-   - Too sunny can be harsh; completely overcast can be gloomy
-   - Least weighted but affects overall atmosphere
-   - Values range from 0-100%
+   - **Optimal value**: 40% (partly cloudy)
+   - **Penalty factor**: 1.5 points per percentage deviation
+   - **Reasoning**: Partial cloud cover is ideal - provides shade without being gloomy. Clear skies (0%) can be harsh; overcast (100%) can be depressing
+   - **Example**: At 20% or 60% → Score = 70, At 100% → Score = 10
 
 ### Reasoning
 
-- **Temperature** receives the highest weight (40%) because humans are most sensitive to ambient temperature
-- **Humidity** is weighted at 30% as it significantly affects how temperature feels (heat index/feels-like temperature)
-- **Wind Speed** at 20% moderates temperature perception and affects outdoor comfort
-- **Cloudiness** at 10% has psychological impact on mood and perceived comfort
+- **Temperature (40%)** receives the highest weight because humans are most sensitive to ambient temperature. The ideal of 22°C represents comfortable room temperature
+- **Humidity (30%)** significantly affects perceived comfort. 50% is the sweet spot - not too dry, not too humid
+- **Wind Speed (20%)** can make comfortable temperatures feel cold or help cooling, but strong winds are universally uncomfortable
+- **Cloudiness (10%)** has psychological impact. Partial cloudiness (40%) provides the best balance between sunshine and shade
+
+### Mathematical Approach
+
+The algorithm uses **absolute deviation from optimal values** with different penalty factors:
+- Higher penalties (4.0 for temperature) mean faster score degradation
+- Lower penalties (1.2 for humidity) create gentler curves
+- Linear degradation makes the scoring predictable and fair
+- Bounds ensure scores stay within 0-100 range
 
 ### Trade-offs Considered
 
-1. **Excluded Pressure**: Atmospheric pressure has minimal direct impact on comfort for most people at sea level
-2. **Excluded Visibility**: While useful, it's less directly related to physical comfort than other parameters
-3. **Included Cloudiness**: Provides a balance between sunny and overcast conditions that affect mood
-4. **Simplified Algorithm**: Real comfort indices (like Heat Index or Humidex) are complex; this provides a good balance between accuracy and simplicity
-5. **Regional Bias**: Algorithm assumes temperate climate preferences; optimal ranges may vary for people accustomed to tropical/arctic regions
-6. **Linear Scoring**: Uses linear degradation from optimal values rather than exponential, making it more predictable
+1. **Linear vs Non-linear**: Chose linear degradation for simplicity and predictability, though real human comfort follows slightly curved patterns
+2. **Single Optimal Point vs Range**: Used single optimal values (e.g., 22°C) rather than ranges for mathematical precision
+3. **Excluded Pressure**: Atmospheric pressure has minimal direct impact on comfort for most people at typical elevations
+4. **Excluded Visibility**: While useful for outdoor activities, it's less directly related to physical comfort
+5. **Regional Bias**: Optimal values reflect temperate climate preferences; tropical residents might prefer 26°C
+6. **Weight Distribution**: 40-30-20-10 split balances physical impact with psychological factors
 
 ## 🏗️ Architecture
 
@@ -154,7 +171,12 @@ weather-analytics/
 5. **Run the application**
    ```bash
    ./mvnw spring-boot:run
-   ``
+   ```
+   
+   Or run the JAR:
+   ```bash
+   java -jar target/weather-analytics-1.0.0.jar
+   ```
 
 6. **Verify the application**
    
@@ -261,4 +283,6 @@ spring.data.redis.port=6379
 # Cache TTL
 weather.cache.ttl=300
 ```
+
+
 
